@@ -19,14 +19,15 @@ if not os.path.exists(CSV_FILE):
     df_init.to_csv(CSV_FILE, index=False)
 
 # Safe Haar Cascade Initialization
-try:
-    import cv2
+import os
+cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+if not os.path.exists(cascade_path):
     import urllib.request
-    cascade_file = "haarcascade_frontalface_default.xml"
-    urllib.request.urlretrieve("https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml", cascade_file)
-    face_cascade = cv2.CascadeClassifier(cascade_file)
-except Exception:
-    face_cascade = None
+    cascade_url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+    urllib.request.urlretrieve(cascade_url, "haarcascade_frontalface_default.xml")
+    cascade_path = "haarcascade_frontalface_default.xml"
+
+face_cascade = cv2.CascadeClassifier(cascade_path)
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
 
@@ -52,8 +53,10 @@ if menu == "Mark Attendance":
             st.error("⚠️ Liveness Check Failed: Photo is too blurry or detected as a digital screen/photo print. Please present a real face.")
         else:
             # Multi-Face Detection
+            if face_cascade is not None and not face_cascade.empty():
             faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-            
+        else:
+            faces = []
             if len(faces) == 0:
                 st.warning("No face detected. Please try again.")
             else:
