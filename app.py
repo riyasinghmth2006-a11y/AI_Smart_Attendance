@@ -19,17 +19,9 @@ if not os.path.exists(CSV_FILE):
     df_init.to_csv(CSV_FILE, index=False)
 
 # Load Haar Cascade Classifier safely
-try:
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-except AttributeError:
-    face_cascade = None
-
-if face_cascade is None or face_cascade.empty():
-    import urllib.request
-    url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
-    urllib.request.urlretrieve(url, "haarcascade_frontalface_default.xml")
-    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-
+import os
+cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+face_cascade = cv2.CascadeClassifier(cascade_path)
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
 
