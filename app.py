@@ -19,7 +19,10 @@ if not os.path.exists(CSV_FILE):
     df_init.to_csv(CSV_FILE, index=False)
 
 # Load Haar Cascade Classifier safely
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml') if hasattr(cv2, 'data') else None
+try:
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+except AttributeError:
+    face_cascade = None
 
 if face_cascade is None or face_cascade.empty():
     import urllib.request
