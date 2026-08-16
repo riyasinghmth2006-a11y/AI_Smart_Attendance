@@ -18,14 +18,14 @@ if not os.path.exists(CSV_FILE):
     df_init = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
     df_init.to_csv(CSV_FILE, index=False)
 
-# Load Haar Cascade Classifier for Multi-Face Detection
 # Load Haar Cascade Classifier safely
-cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml' if hasattr(cv2, 'data') else 'haarcascade_frontalface_default.xml'
-face_cascade = cv2.CascadeClassifier(cascade_path)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml') if hasattr(cv2, 'data') else None
 
-if face_cascade.empty():
-    # Fallback to default system path if cv2.data is not accessible
-    face_cascade = cv2.CascadeClassifier(cv2.samples.findFile('haarcascades/haarcascade_frontalface_default.xml'))
+if face_cascade is None or face_cascade.empty():
+    import urllib.request
+    url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+    urllib.request.urlretrieve(url, "haarcascade_frontalface_default.xml")
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
