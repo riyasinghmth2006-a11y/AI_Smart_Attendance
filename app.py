@@ -52,15 +52,16 @@ if menu == "Mark Attendance":
         if laplacian_var < 50:
             st.error("⚠️ Liveness Check Failed: Photo is too blurry or detected as a digital screen/photo print. Please present a real face.")
         else:
-            # Multi-Face Detection
-            if face_cascade is not None and not face_cascade.empty():
+          # Multi-Face Detection
+        if face_cascade is not None and not face_cascade.empty():
             faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
         else:
             faces = []
-            if len(faces) == 0:
-                st.warning("No face detected. Please try again.")
-            else:
-                st.success(f"✅ Detected {len(faces)} face(s) in the image!")
+
+        if len(faces) == 0:
+            st.warning("No face detected. Please try again.")
+        else:
+            st.success(f"Detected {len(faces)} face(s) in the image!")
                 
                 # Load current attendance
                 df_curr = pd.read_csv(CSV_FILE)
