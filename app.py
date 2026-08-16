@@ -18,10 +18,11 @@ if not os.path.exists(CSV_FILE):
     df_init = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
     df_init.to_csv(CSV_FILE, index=False)
 
-# Load Haar Cascade Classifier safely
-import os
-cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
-face_cascade = cv2.CascadeClassifier(cascade_path)
+# Download and Load Haar Cascade Classifier directly
+import urllib.request
+cascade_url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+urllib.request.urlretrieve(cascade_url, "haarcascade_frontalface_default.xml")
+face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
 
