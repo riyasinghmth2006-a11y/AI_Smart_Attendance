@@ -15,10 +15,10 @@ st.title("🎓 Advanced AI Smart Attendance System")
 
 CSV_FILE = "attendance.csv"
 
-# Function to Send Email Notification
+# Function to Send Email Notification with TIMEOUT (Fast Execution)
 def send_email_alert(to_email, student_name, time_str):
-    sender_email = st.secrets.get("SENDER_EMAIL", "")
-    sender_password = st.secrets.get("SENDER_PASSWORD", "")
+    sender_email = st.secrets.get("SENDER_EMAIL", "").strip()
+    sender_password = st.secrets.get("SENDER_PASSWORD", "").strip().replace(" ", "")
 
     if not sender_email or not sender_password:
         return False, "Email credentials missing in Streamlit Secrets."
@@ -33,14 +33,15 @@ def send_email_alert(to_email, student_name, time_str):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        # Set 5-second timeout so app doesn't hang
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=5)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
         return True, "Email sent successfully!"
     except Exception as e:
-        return False, str(e)
+        return False, f"Email failed: {str(e)}"
 
 def load_data():
     required_cols = ["Name", "Roll_No", "Email", "Date", "Time", "Status"]
@@ -56,7 +57,6 @@ def load_data():
     else:
         return pd.DataFrame(columns=required_cols)
 
-# PDF Generation Function
 def create_pdf(df):
     pdf = FPDF()
     pdf.add_page()
@@ -100,8 +100,9 @@ if menu == "Mark Attendance":
         already_marked = df[(df['Roll_No'].astype(str) == str(roll_no)) & (df['Date'] == today)]
         
         if not already_marked.empty:
-            st.warning(f"Attendance for **{student_name}** (Roll: {roll_no}) is already marked today!")
+            st.warning(f"Attendance for *{student_name}* (Roll: {roll_no}) is already marked today!")
         else:
+            # 1. Save Attendance First
             new_entry = pd.DataFrame([{
                 "Name": student_name, 
                 "Roll_No": roll_no, 
@@ -113,15 +114,16 @@ if menu == "Mark Attendance":
             df_updated = pd.concat([df, new_entry], ignore_index=True)
             df_updated.to_csv(CSV_FILE, index=False)
             st.balloons()
-            st.success(f"Marked attendance for **{student_name}** (Roll: {roll_no})!")
+            st.success(f"✅ Marked attendance for *{student_name}* (Roll: {roll_no})!")
 
-            # Trigger Email Alert
+            # 2. Try Sending Email (Fast)
             if user_email:
-                status, msg = send_email_alert(user_email, student_name, current_time)
+                with st.spinner("Sending Email Alert..."):
+                    status, msg = send_email_alert(user_email, student_name, current_time)
                 if status:
-                    st.info(f"📧 Confirmation email sent to **{user_email}**!")
+                    st.info(f"📧 Confirmation email sent to *{user_email}*!")
                 else:
-                    st.caption(f"Note: Email notification not sent ({msg})")
+                    st.warning(f"⚠️ Attendance marked, but email failed: {msg}")
 
 elif menu == "Analytics & History":
     st.subheader("📊 Analytics & Percentage")
