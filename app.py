@@ -5,6 +5,7 @@ import pandas as pd
 import datetime
 import os
 import smtplib
+import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import plotly.express as px
@@ -14,6 +15,7 @@ st.set_page_config(page_title="AI Smart Attendance", layout="wide")
 st.title("🎓 Advanced AI Smart Attendance System with Face Recognition")
 
 CSV_FILE = "attendance.csv"
+CASCADE_FILE = "haarcascade_frontalface_default.xml"
 
 # Pre-registered Students Database (Mapping Roll/Name/Email)
 STUDENT_DB = {
@@ -22,15 +24,20 @@ STUDENT_DB = {
     "103": {"Name": "Student 3", "Email": ""},
 }
 
+# Download Haar Cascade XML if missing
+def load_cascade():
+    if not os.path.exists(CASCADE_FILE):
+        url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+        urllib.request.urlretrieve(url, CASCADE_FILE)
+    return cv2.CascadeClassifier(CASCADE_FILE)
+
 # Function to Detect Face in Image using OpenCV
 def detect_face_and_match(image_bytes):
-    # Convert image bytes to OpenCV format
     file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Load OpenCV Haar Cascade for Face Detection
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    face_cascade = load_cascade()
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     
     face_detected = len(faces) > 0
