@@ -1,7 +1,5 @@
 streamlit
 opencv-python-headless
 pandas
-numpy
-openpyxl
 plotly
-matplotlib
+face_recognition
