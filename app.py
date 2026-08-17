@@ -25,13 +25,13 @@ STUDENT_DB = {
 # Function to Detect Face in Image using OpenCV
 def detect_face_and_match(image_bytes):
     # Convert image bytes to OpenCV format
-    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=uint8)
+    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
     # Load OpenCV Haar Cascade for Face Detection
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detect_multi_scale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     
     face_detected = len(faces) > 0
     return face_detected, len(faces)
