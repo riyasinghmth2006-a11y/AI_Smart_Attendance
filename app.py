@@ -10,11 +10,20 @@ import plotly.express as px
 st.set_page_config(page_title="AI Smart Attendance", layout="wide")
 st.title("🎓 Advanced AI Smart Attendance System")
 
-# Attendance File Initial Setup
 CSV_FILE = "attendance.csv"
-if not os.path.exists(CSV_FILE):
-    df_init = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
-    df_init.to_csv(CSV_FILE, index=False)
+
+# Safe Data Loader Function
+def load_data():
+    if os.path.exists(CSV_FILE):
+        try:
+            df = pd.read_csv(CSV_FILE)
+            if not all(col in df.columns for col in ["Name", "Date", "Time", "Status"]):
+                df = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
+        except Exception:
+            df = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
+    else:
+        df = pd.DataFrame(columns=["Name", "Date", "Time", "Status"])
+    return df
 
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
@@ -27,16 +36,20 @@ if menu == "Mark Attendance":
         bytes_data = img_file_buffer.getvalue()
         cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
         
-        # Verify photo capture
         if cv2_img is not None:
             st.success("✅ Face Captured Successfully!")
 
-            df_curr = pd.read_csv(CSV_FILE)
+            df_curr = load_data()
             today_date = str(datetime.date.today())
             current_time = datetime.datetime.now().strftime("%H:%M:%S")
 
             student_name = "Student_1"
-            already_marked = df_curr[(df_curr['Name'] == student_name) & (df_curr['Date'] == today_date)]
+            
+            # Safe Filter
+            if not df_curr.empty:
+                already_marked = df_curr[(df_curr['Name'] == student_name) & (df_curr['Date'] == today_date)]
+            else:
+                already_marked = pd.DataFrame()
 
             if already_marked.empty:
                 new_entry = pd.DataFrame([{"Name": student_name, "Date": today_date, "Time": current_time, "Status": "Present"}])
@@ -49,7 +62,7 @@ if menu == "Mark Attendance":
 
 elif menu == "Analytics & History":
     st.subheader("📊 Attendance Analytics & History")
-    df = pd.read_csv(CSV_FILE)
+    df = load_data()
     if df.empty:
         st.info("No attendance records found yet.")
     else:
@@ -78,7 +91,7 @@ elif menu == "Analytics & History":
 
 elif menu == "Download Reports":
     st.subheader("📥 Export & Download Attendance Reports")
-    df = pd.read_csv(CSV_FILE)
+    df = load_data()
     if df.empty:
         st.warning("No data available to export.")
     else:
@@ -95,4 +108,3 @@ elif menu == "Download Reports":
             file_name=f"attendance_report_{selected_date}.csv",
             mime="text/csv",
         )
-        
