@@ -21,13 +21,10 @@ st.set_page_config(
 # --- CUSTOM CSS FOR PREMIUM LOOK ---
 st.markdown("""
 <style>
-    /* Dark Theme Custom Styling */
     .stApp {
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         color: #f8fafc;
     }
-    
-    /* Custom Card Styling */
     .metric-card {
         background: rgba(30, 41, 59, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -37,36 +34,14 @@ st.markdown("""
         backdrop-filter: blur(10px);
         text-align: center;
     }
-    .metric-card h3 {
-        color: #94a3b8;
-        font-size: 1rem;
-        margin-bottom: 8px;
-    }
-    .metric-card h1 {
-        color: #38bdf8;
-        font-size: 2.2rem;
-        margin: 0;
-    }
-
-    /* Primary Buttons */
+    .metric-card h3 { color: #94a3b8; font-size: 1rem; margin-bottom: 8px; }
+    .metric-card h1 { color: #38bdf8; font-size: 2.2rem; margin: 0; }
     .stButton>button {
         background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        font-weight: 600;
-        padding: 0.6rem 1.2rem;
-        transition: all 0.3s ease;
+        color: white; border: none; border-radius: 10px; font-weight: 600; padding: 0.6rem 1.2rem;
     }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    }
-    
-    /* Sidebar Styling */
     section[data-testid="stSidebar"] {
-        background-color: #0b1329;
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
+        background-color: #0b1329; border-right: 1px solid rgba(255, 255, 255, 0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -83,9 +58,10 @@ def load_students():
         return df
     try:
         df = pd.read_csv(STUDENTS_CSV)
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = "N/A"
+        # NaN / Empty string cleanup
+        df['Email'] = df['Email'].fillna("N/A").astype(str)
+        df['Roll_No'] = df['Roll_No'].astype(str)
+        df['Name'] = df['Name'].fillna("Unknown").astype(str)
         return df
     except Exception:
         return pd.DataFrame(columns=required_cols)
@@ -121,19 +97,25 @@ def verify_face_image(image_file):
 def send_email_alert(to_email, student_name, subject_name, time_str):
     sender_email = st.secrets.get("SENDER_EMAIL", "").strip()
     sender_password = st.secrets.get("SENDER_PASSWORD", "").strip().replace(" ", "")
-    if not sender_email or not sender_password or to_email == "N/A": return False, "Missing credentials"
+    
+    if not sender_email or not sender_password:
+        return False, "SENDER_EMAIL or SENDER_PASSWORD missing in Streamlit Secrets."
+    if not to_email or to_email in ["N/A", "nan", "None", ""]:
+        return False, "Student Email is not configured."
+        
     try:
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = to_email
         msg['Subject'] = f"Attendance Confirmation - {subject_name}"
-        msg.attach(MIMEText(f"Hello,\n\nAttendance marked for {student_name} ({subject_name}) at {time_str}.\n\nRegards,\nAI System", 'plain'))
-        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=5)
+        msg.attach(MIMEText(f"Hello {student_name},\n\nYour attendance for {subject_name} has been successfully marked at {time_str}.\n\nRegards,\nAI Attendance System", 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        return True, "Success"
+        return True, "Email sent successfully!"
     except Exception as e:
         return False, str(e)
 
@@ -168,7 +150,6 @@ def create_pdf(df):
 st.title("🎓 AI Smart Attendance Portal")
 st.caption("Automated Face-Verification & Real-time Analytics System")
 
-# KPI METRICS CARDS
 st_df = load_students()
 att_df = load_attendance()
 today_str = str(datetime.date.today())
@@ -195,13 +176,13 @@ if menu == "📸 Mark Attendance":
         st.warning("No students registered! Please add students via Admin Panel.")
     else:
         c1, c2 = st.columns(2)
-        selected_roll = c1.selectbox("Select Roll Number", students_df['Roll_No'].astype(str).unique())
-        matched_student = students_df[students_df['Roll_No'].astype(str) == str(selected_roll)]
+        selected_roll = c1.selectbox("Select Roll Number", students_df['Roll_No'].unique())
+        matched_student = students_df[students_df['Roll_No'] == str(selected_roll)]
         
         if not matched_student.empty:
             student_info = matched_student.iloc[0]
-            student_name = student_info.get("Name", "Unknown")
-            student_email = student_info.get("Email", "N/A")
+            student_name = str(student_info.get("Name", "Unknown"))
+            student_email = str(student_info.get("Email", "N/A"))
             
             c2.selectbox("Select Subject", ["Python Programming", "AI & Machine Learning", "Data Science", "Web Development"], key="subj")
             selected_subject = st.session_state.subj
@@ -233,9 +214,14 @@ if menu == "📸 Mark Attendance":
                         st.balloons()
                         st.success(f"✅ Marked Present: *{student_name}* ({selected_subject})")
                         
-                        if student_email != "N/A":
+                        # Trigger Email Alert
+                        with st.spinner("📧 Sending email notification..."):
                             status, msg = send_email_alert(student_email, student_name, selected_subject, current_time)
-                            if status: st.info(f"📧 Confirmation email sent to *{student_email}*!")
+                        
+                        if status:
+                            st.success(f"📩 Confirmation email sent to *{student_email}*!")
+                        else:
+                            st.warning(f"⚠️ Email Not Sent: {msg}")
 
 elif menu == "📊 Analytics & Insights":
     st.subheader("📊 Class Attendance Dashboard")
@@ -245,9 +231,7 @@ elif menu == "📊 Analytics & Insights":
     else:
         filter_subj = st.selectbox("Filter Subject", ["All"] + list(df['Subject'].unique()))
         filtered_df = df if filter_subj == "All" else df[df['Subject'] == filter_subj]
-        
         st.dataframe(filtered_df, use_container_width=True)
-        
         fig = px.bar(filtered_df, x="Subject", color="Status", title="Subject-wise Breakdown", template="plotly_dark")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -271,19 +255,22 @@ elif menu == "🔑 Admin Panel":
         tab1, tab2 = st.tabs(["➕ Manage Student Directory", "📋 View Attendance Logs"])
         
         with tab1:
-            st.write("### Add New Student")
+            st.write("### Add / Update Student")
             with st.form("add_student", clear_on_submit=True):
                 r = st.text_input("Roll Number")
                 n = st.text_input("Student Name")
                 e = st.text_input("Email Address")
-                if st.form_submit_button("Add Student"):
-                    if r and n:
+                if st.form_submit_button("Save Student"):
+                    if r and n and e:
                         st_df = load_students()
-                        new_row = pd.DataFrame([{"Roll_No": str(r), "Name": str(n), "Email": str(e) if e else "N/A"}])
+                        # Overwrite if roll number already exists
+                        st_df = st_df[st_df['Roll_No'] != str(r)]
+                        new_row = pd.DataFrame([{"Roll_No": str(r), "Name": str(n), "Email": str(e)}])
                         save_students(pd.concat([st_df, new_row], ignore_index=True))
-                        st.success(f"Added: {n} (Roll No: {r})")
+                        st.success(f"Saved: {n} (Roll No: {r}, Email: {e})")
                         st.rerun()
-                    else: st.error("Please enter Roll No and Name!")
+                    else:
+                        st.error("Please enter Roll No, Name, AND Email Address!")
             
             st.write("### Registered Students")
             st.dataframe(load_students(), use_container_width=True)
