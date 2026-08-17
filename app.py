@@ -13,9 +13,19 @@ st.title("🎓 Advanced AI Smart Attendance System")
 CSV_FILE = "attendance.csv"
 
 def load_data():
+    required_cols = ["Name", "Roll_No", "Date", "Time", "Status"]
     if os.path.exists(CSV_FILE):
-        return pd.read_csv(CSV_FILE)
-    return pd.DataFrame(columns=["Name", "Roll_No", "Date", "Time", "Status"])
+        try:
+            df = pd.read_csv(CSV_FILE)
+            # Ensure all required columns exist
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = "N/A"
+            return df[required_cols]
+        except Exception:
+            return pd.DataFrame(columns=required_cols)
+    else:
+        return pd.DataFrame(columns=required_cols)
 
 # PDF Generation Function
 def create_pdf(df):
@@ -54,41 +64,53 @@ if menu == "Mark Attendance":
     roll_no = col_b.text_input("Enter Roll Number", value="101")
     
     img_file = st.camera_input("Take a photo")
-    if img_file:
+    if img_file is not None:
         df = load_data()
         today = str(datetime.date.today())
-        # Check duplicate
-        if not df[(df['Roll_No'] == str(roll_no)) & (df['Date'] == today)].empty:
-            st.warning("Already marked today!")
+        
+        # Check duplicate safely
+        already_marked = df[(df['Roll_No'].astype(str) == str(roll_no)) & (df['Date'] == today)]
+        
+        if not already_marked.empty:
+            st.warning(f"Attendance for **{student_name}** (Roll: {roll_no}) is already marked today!")
         else:
-            new_entry = pd.DataFrame([{"Name": student_name, "Roll_No": roll_no, "Date": today, "Time": datetime.datetime.now().strftime("%H:%M:%S"), "Status": "Present"}])
-            pd.concat([df, new_entry], ignore_index=True).to_csv(CSV_FILE, index=False)
-            st.success(f"Marked for {student_name}!")
+            new_entry = pd.DataFrame([{
+                "Name": student_name, 
+                "Roll_No": roll_no, 
+                "Date": today, 
+                "Time": datetime.datetime.now().strftime("%H:%M:%S"), 
+                "Status": "Present"
+            }])
+            df_updated = pd.concat([df, new_entry], ignore_index=True)
+            df_updated.to_csv(CSV_FILE, index=False)
+            st.balloons()
+            st.success(f"Marked attendance for **{student_name}** (Roll: {roll_no})!")
 
 elif menu == "Analytics & History":
     st.subheader("📊 Analytics & Percentage")
     df = load_data()
-    if not df.empty:
-        # Percentage Calculation
+    if df.empty:
+        st.info("No attendance records found yet.")
+    else:
         total_days = df['Date'].nunique()
-        student_stats = df.groupby('Name').size().reset_index(name='Days_Present')
-        student_stats['Percentage'] = (student_stats['Days_Present'] / total_days * 100).round(2)
+        student_stats = df.groupby(['Name', 'Roll_No']).size().reset_index(name='Days_Present')
+        student_stats['Percentage (%)'] = ((student_stats['Days_Present'] / total_days) * 100).round(2)
         
         st.write("### Student Attendance Percentage")
-        st.table(student_stats)
+        st.dataframe(student_stats, use_container_width=True)
         
-        fig = px.bar(student_stats, x='Name', y='Percentage', title="Attendance % by Student", color='Percentage')
+        fig = px.bar(student_stats, x='Name', y='Percentage (%)', title="Attendance % by Student", color='Percentage (%)')
         st.plotly_chart(fig, use_container_width=True)
 
 elif menu == "Download Reports":
     st.subheader("📥 Export Reports")
     df = load_data()
-    if not df.empty:
-        # PDF Button
+    if df.empty:
+        st.warning("No data available to export.")
+    else:
         pdf_bytes = create_pdf(df)
         st.download_button("📄 Download Report as PDF", data=pdf_bytes, file_name="report.pdf", mime="application/pdf")
         
-        # CSV Button
         csv_data = df.to_csv(index=False).encode('utf-8')
         st.download_button("📊 Download Report as CSV", data=csv_data, file_name="report.csv", mime="text/csv")
-            
+        
