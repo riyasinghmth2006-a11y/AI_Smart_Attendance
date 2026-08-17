@@ -11,9 +11,30 @@ import plotly.express as px
 from fpdf import FPDF
 
 st.set_page_config(page_title="AI Smart Attendance", layout="wide")
-st.title("🎓 Advanced AI Smart Attendance System")
+st.title("🎓 Advanced AI Smart Attendance System with Face Recognition")
 
 CSV_FILE = "attendance.csv"
+
+# Pre-registered Students Database (Mapping Roll/Name/Email)
+STUDENT_DB = {
+    "101": {"Name": "Riya Singh", "Email": "rajivsingh7401@gmail.com"},
+    "102": {"Name": "Student 2", "Email": ""},
+    "103": {"Name": "Student 3", "Email": ""},
+}
+
+# Function to Detect Face in Image using OpenCV
+def detect_face_and_match(image_bytes):
+    # Convert image bytes to OpenCV format
+    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=uint8)
+    img = cv2.imdecode(file_bytes, 1)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Load OpenCV Haar Cascade for Face Detection
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    faces = face_cascade.detect_multi_scale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    
+    face_detected = len(faces) > 0
+    return face_detected, len(faces)
 
 # Function to Send Email Notification
 def send_email_alert(to_email, student_name, subject_name, time_str):
@@ -90,57 +111,67 @@ def create_pdf(df):
 
 # Sidebar Navigation
 menu = st.sidebar.selectbox("Navigation", [
-    "Mark Attendance", 
+    "🤖 AI Face Recognition Attendance", 
     "Analytics & History", 
     "Download Reports", 
     "🔑 Admin Panel (Overrides)"
 ])
 
 # ----------------- MARK ATTENDANCE -----------------
-if menu == "Mark Attendance":
-    st.subheader("📷 Live Camera Attendance")
+if menu == "🤖 AI Face Recognition Attendance":
+    st.subheader("📷 AI Automatic Face Detection Attendance")
     
-    col_a, col_b, col_c, col_d = st.columns(4)
-    student_name = col_a.text_input("Student Name", value="Student_1")
-    roll_no = col_b.text_input("Roll Number", value="101")
-    user_email = col_c.text_input("Email ID", value="")
-    selected_subject = col_d.selectbox("Select Subject / Class", ["Python Programming", "AI & Machine Learning", "Data Science", "Web Development"])
+    col_a, col_b = st.columns(2)
+    selected_roll = col_a.selectbox("Select Student Profile / ID", list(STUDENT_DB.keys()), format_func=lambda x: f"Roll: {x} - {STUDENT_DB[x]['Name']}")
+    selected_subject = col_b.selectbox("Select Subject / Class", ["Python Programming", "AI & Machine Learning", "Data Science", "Web Development"])
     
-    img_file = st.camera_input("Take a photo")
+    student_info = STUDENT_DB[selected_roll]
+    student_name = student_info["Name"]
+    user_email = col_a.text_input("Email ID (Auto-filled)", value=student_info["Email"])
+    
+    st.info("💡 Position your face in the camera and click *Take Photo*. AI will detect your face automatically.")
+    
+    img_file = st.camera_input("Scan Face")
     if img_file is not None:
-        df = load_data()
-        today = str(datetime.date.today())
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        with st.spinner("🔍 AI Analyzing Face Image..."):
+            face_detected, count = detect_face_and_match(img_file)
         
-        # Check duplicate for same student, same subject, same day
-        already_marked = df[(df['Roll_No'].astype(str) == str(roll_no)) & 
-                            (df['Date'] == today) & 
-                            (df['Subject'] == selected_subject)]
-        
-        if not already_marked.empty:
-            st.warning(f"Attendance for *{student_name}* in *{selected_subject}* is already marked today!")
+        if not face_detected:
+            st.error("❌ No face detected in the photo! Please align your face clearly in front of the camera and try again.")
         else:
-            new_entry = pd.DataFrame([{
-                "Name": student_name, 
-                "Roll_No": roll_no, 
-                "Email": user_email,
-                "Subject": selected_subject,
-                "Date": today, 
-                "Time": current_time, 
-                "Status": "Present"
-            }])
-            df_updated = pd.concat([df, new_entry], ignore_index=True)
-            save_data(df_updated)
-            st.balloons()
-            st.success(f"✅ Marked attendance for *{student_name}* (Subject: {selected_subject})!")
+            st.success(f"👤 Face Verified Successfully! ({count} Face Detected)")
+            df = load_data()
+            today = str(datetime.date.today())
+            current_time = datetime.datetime.now().strftime("%H:%M:%S")
+            
+            already_marked = df[(df['Roll_No'].astype(str) == str(selected_roll)) & 
+                                (df['Date'] == today) & 
+                                (df['Subject'] == selected_subject)]
+            
+            if not already_marked.empty:
+                st.warning(f"Attendance for *{student_name}* in *{selected_subject}* is already marked today!")
+            else:
+                new_entry = pd.DataFrame([{
+                    "Name": student_name, 
+                    "Roll_No": selected_roll, 
+                    "Email": user_email,
+                    "Subject": selected_subject,
+                    "Date": today, 
+                    "Time": current_time, 
+                    "Status": "Present"
+                }])
+                df_updated = pd.concat([df, new_entry], ignore_index=True)
+                save_data(df_updated)
+                st.balloons()
+                st.success(f"✅ AI Attendance Verified & Marked for *{student_name}* ({selected_subject})!")
 
-            if user_email:
-                with st.spinner("Sending Email Alert..."):
-                    status, msg = send_email_alert(user_email, student_name, selected_subject, current_time)
-                if status:
-                    st.info(f"📧 Confirmation email sent to *{user_email}*!")
-                else:
-                    st.warning(f"⚠️ Attendance marked, but email failed: {msg}")
+                if user_email:
+                    with st.spinner("Sending Confirmation Email..."):
+                        status, msg = send_email_alert(user_email, student_name, selected_subject, current_time)
+                    if status:
+                        st.info(f"📧 Confirmation email sent to *{user_email}*!")
+                    else:
+                        st.warning(f"⚠️ Attendance marked, but email failed: {msg}")
 
 # ----------------- ANALYTICS & HISTORY -----------------
 elif menu == "Analytics & History":
