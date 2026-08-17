@@ -5,8 +5,8 @@ import pandas as pd
 import datetime
 import os
 import plotly.express as px
+from fpdf import FPDF
 
-# Streamlit Page Setup
 st.set_page_config(page_title="AI Smart Attendance", layout="wide")
 st.title("🎓 Advanced AI Smart Attendance System")
 
@@ -14,108 +14,81 @@ CSV_FILE = "attendance.csv"
 
 def load_data():
     if os.path.exists(CSV_FILE):
-        try:
-            df = pd.read_csv(CSV_FILE)
-            if not all(col in df.columns for col in ["Name", "Roll_No", "Date", "Time", "Status"]):
-                df = pd.DataFrame(columns=["Name", "Roll_No", "Date", "Time", "Status"])
-        except Exception:
-            df = pd.DataFrame(columns=["Name", "Roll_No", "Date", "Time", "Status"])
-    else:
-        df = pd.DataFrame(columns=["Name", "Roll_No", "Date", "Time", "Status"])
-    return df
+        return pd.read_csv(CSV_FILE)
+    return pd.DataFrame(columns=["Name", "Roll_No", "Date", "Time", "Status"])
 
-# Sidebar Navigation
+# PDF Generation Function
+def create_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="Attendance Report", ln=True, align='C')
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Generated on: {datetime.date.today()}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Table Header
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(40, 10, "Name", border=1)
+    pdf.cell(30, 10, "Roll", border=1)
+    pdf.cell(40, 10, "Date", border=1)
+    pdf.cell(40, 10, "Status", border=1)
+    pdf.ln()
+    
+    # Table Rows
+    pdf.set_font("Arial", size=12)
+    for _, row in df.iterrows():
+        pdf.cell(40, 10, str(row['Name']), border=1)
+        pdf.cell(30, 10, str(row['Roll_No']), border=1)
+        pdf.cell(40, 10, str(row['Date']), border=1)
+        pdf.cell(40, 10, str(row['Status']), border=1)
+        pdf.ln()
+    return pdf.output(dest='S').encode('latin-1')
+
 menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & History", "Download Reports"])
 
 if menu == "Mark Attendance":
     st.subheader("📷 Live Camera Attendance")
-    
-    # User Input for Name and Roll No
     col_a, col_b = st.columns(2)
-    with col_a:
-        student_name = st.text_input("Enter Student Name", value="Student_1")
-    with col_b:
-        roll_no = st.text_input("Enter Roll Number", value="101")
-
-    img_file_buffer = st.camera_input("Take a photo to mark attendance")
-
-    if img_file_buffer is not None:
-        bytes_data = img_file_buffer.getvalue()
-        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-        
-        if cv2_img is not None:
-            st.success("✅ Face Captured Successfully!")
-
-            df_curr = load_data()
-            today_date = str(datetime.date.today())
-            current_time = datetime.datetime.now().strftime("%H:%M:%S")
-
-            # Check Duplicate
-            if not df_curr.empty:
-                already_marked = df_curr[(df_curr['Roll_No'] == str(roll_no)) & (df_curr['Date'] == today_date)]
-            else:
-                already_marked = pd.DataFrame()
-
-            if already_marked.empty:
-                new_entry = pd.DataFrame([{
-                    "Name": student_name, 
-                    "Roll_No": roll_no, 
-                    "Date": today_date, 
-                    "Time": current_time, 
-                    "Status": "Present"
-                }])
-                df_updated = pd.concat([df_curr, new_entry], ignore_index=True)
-                df_updated.to_csv(CSV_FILE, index=False)
-                st.balloons()
-                st.info(f"Marked attendance for **{student_name}** (Roll: {roll_no}) at {current_time}")
-            else:
-                st.warning(f"Attendance for **{student_name}** (Roll: {roll_no}) is already marked today!")
+    student_name = col_a.text_input("Enter Student Name", value="Student_1")
+    roll_no = col_b.text_input("Enter Roll Number", value="101")
+    
+    img_file = st.camera_input("Take a photo")
+    if img_file:
+        df = load_data()
+        today = str(datetime.date.today())
+        # Check duplicate
+        if not df[(df['Roll_No'] == str(roll_no)) & (df['Date'] == today)].empty:
+            st.warning("Already marked today!")
+        else:
+            new_entry = pd.DataFrame([{"Name": student_name, "Roll_No": roll_no, "Date": today, "Time": datetime.datetime.now().strftime("%H:%M:%S"), "Status": "Present"}])
+            pd.concat([df, new_entry], ignore_index=True).to_csv(CSV_FILE, index=False)
+            st.success(f"Marked for {student_name}!")
 
 elif menu == "Analytics & History":
-    st.subheader("📊 Attendance Analytics & History")
+    st.subheader("📊 Analytics & Percentage")
     df = load_data()
-    if df.empty:
-        st.info("No attendance records found yet.")
-    else:
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Records", len(df))
-        col2.metric("Unique Students", df["Name"].nunique())
-        col3.metric("Total Dates Logged", df["Date"].nunique())
-        st.markdown("---")
+    if not df.empty:
+        # Percentage Calculation
+        total_days = df['Date'].nunique()
+        student_stats = df.groupby('Name').size().reset_index(name='Days_Present')
+        student_stats['Percentage'] = (student_stats['Days_Present'] / total_days * 100).round(2)
         
-        col_left, col_right = st.columns(2)
-        with col_left:
-            st.write("### Attendance Count per Student")
-            student_counts = df["Name"].value_counts().reset_index()
-            student_counts.columns = ["Name", "Count"]
-            fig_bar = px.bar(student_counts, x="Name", y="Count", color="Name", title="Total Attendance by Student")
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-        with col_right:
-            st.write("### Daily Attendance Trend")
-            daily_counts = df.groupby("Date").size().reset_index(name="Present Count")
-            fig_line = px.line(daily_counts, x="Date", y="Present Count", markers=True, title="Daily Attendance")
-            st.plotly_chart(fig_line, use_container_width=True)
-
-        st.markdown("---")
-        st.dataframe(df, use_container_width=True)
+        st.write("### Student Attendance Percentage")
+        st.table(student_stats)
+        
+        fig = px.bar(student_stats, x='Name', y='Percentage', title="Attendance % by Student", color='Percentage')
+        st.plotly_chart(fig, use_container_width=True)
 
 elif menu == "Download Reports":
-    st.subheader("📥 Export & Download Attendance Reports")
+    st.subheader("📥 Export Reports")
     df = load_data()
-    if df.empty:
-        st.warning("No data available to export.")
-    else:
-        dates = df["Date"].unique().tolist()
-        selected_date = st.selectbox("Filter by Date (Optional)", ["All Dates"] + dates)
-
-        export_df = df if selected_date == "All Dates" else df[df["Date"] == selected_date]
-        st.dataframe(export_df)
-
-        csv_data = export_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📄 Download Report as CSV",
-            data=csv_data,
-            file_name=f"attendance_report_{selected_date}.csv",
-            mime="text/csv",
-        )
+    if not df.empty:
+        # PDF Button
+        pdf_bytes = create_pdf(df)
+        st.download_button("📄 Download Report as PDF", data=pdf_bytes, file_name="report.pdf", mime="application/pdf")
+        
+        # CSV Button
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📊 Download Report as CSV", data=csv_data, file_name="report.csv", mime="text/csv")
+            
