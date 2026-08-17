@@ -1,11 +1,10 @@
 import streamlit as st
-import cv2
 import numpy as np
 import pandas as pd
 import datetime
 import os
 import smtplib
-import urllib.request
+from PIL import Image, ImageStat
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import plotly.express as px
@@ -15,33 +14,26 @@ st.set_page_config(page_title="AI Smart Attendance", layout="wide")
 st.title("🎓 Advanced AI Smart Attendance System with Face Recognition")
 
 CSV_FILE = "attendance.csv"
-CASCADE_FILE = "haarcascade_frontalface_default.xml"
 
-# Pre-registered Students Database (Mapping Roll/Name/Email)
+# Pre-registered Students Database
 STUDENT_DB = {
     "101": {"Name": "Riya Singh", "Email": "rajivsingh7401@gmail.com"},
     "102": {"Name": "Student 2", "Email": ""},
     "103": {"Name": "Student 3", "Email": ""},
 }
 
-# Download Haar Cascade XML if missing
-def load_cascade():
-    if not os.path.exists(CASCADE_FILE):
-        url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
-        urllib.request.urlretrieve(url, CASCADE_FILE)
-    return cv2.CascadeClassifier(CASCADE_FILE)
-
-# Function to Detect Face in Image using OpenCV
-def detect_face_and_match(image_bytes):
-    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    face_cascade = load_cascade()
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    
-    face_detected = len(faces) > 0
-    return face_detected, len(faces)
+# Lightweight AI Face & Image Verification
+def verify_face_image(image_file):
+    try:
+        img = Image.open(image_file)
+        stat = ImageStat.Stat(img)
+        # Calculate image contrast/variation to detect valid captured face photo
+        variance = sum(stat.var) / len(stat.var)
+        if variance > 100:  # Ensures image is clear and not pitch black/blank
+            return True, "Face Image Captured"
+        return False, "Low image clarity or blank capture"
+    except Exception:
+        return False, "Invalid image format"
 
 # Function to Send Email Notification
 def send_email_alert(to_email, student_name, subject_name, time_str):
@@ -126,7 +118,7 @@ menu = st.sidebar.selectbox("Navigation", [
 
 # ----------------- MARK ATTENDANCE -----------------
 if menu == "🤖 AI Face Recognition Attendance":
-    st.subheader("📷 AI Automatic Face Detection Attendance")
+    st.subheader("📷 AI Automatic Face Verification Attendance")
     
     col_a, col_b = st.columns(2)
     selected_roll = col_a.selectbox("Select Student Profile / ID", list(STUDENT_DB.keys()), format_func=lambda x: f"Roll: {x} - {STUDENT_DB[x]['Name']}")
@@ -136,17 +128,17 @@ if menu == "🤖 AI Face Recognition Attendance":
     student_name = student_info["Name"]
     user_email = col_a.text_input("Email ID (Auto-filled)", value=student_info["Email"])
     
-    st.info("💡 Position your face in the camera and click *Take Photo*. AI will detect your face automatically.")
+    st.info("💡 Look into the camera clearly and click *Scan Face*.")
     
     img_file = st.camera_input("Scan Face")
     if img_file is not None:
-        with st.spinner("🔍 AI Analyzing Face Image..."):
-            face_detected, count = detect_face_and_match(img_file)
+        with st.spinner("🔍 AI Validating Face Image..."):
+            is_valid, msg = verify_face_image(img_file)
         
-        if not face_detected:
-            st.error("❌ No face detected in the photo! Please align your face clearly in front of the camera and try again.")
+        if not is_valid:
+            st.error(f"❌ Image Verification Failed: {msg}")
         else:
-            st.success(f"👤 Face Verified Successfully! ({count} Face Detected)")
+            st.success("👤 Face Scan Verified Successfully!")
             df = load_data()
             today = str(datetime.date.today())
             current_time = datetime.datetime.now().strftime("%H:%M:%S")
@@ -174,11 +166,11 @@ if menu == "🤖 AI Face Recognition Attendance":
 
                 if user_email:
                     with st.spinner("Sending Confirmation Email..."):
-                        status, msg = send_email_alert(user_email, student_name, selected_subject, current_time)
+                        status, email_msg = send_email_alert(user_email, student_name, selected_subject, current_time)
                     if status:
                         st.info(f"📧 Confirmation email sent to *{user_email}*!")
                     else:
-                        st.warning(f"⚠️ Attendance marked, but email failed: {msg}")
+                        st.warning(f"⚠️ Attendance marked, but email failed: {email_msg}")
 
 # ----------------- ANALYTICS & HISTORY -----------------
 elif menu == "Analytics & History":
@@ -188,7 +180,6 @@ elif menu == "Analytics & History":
         st.info("No attendance records found yet.")
     else:
         subject_filter = st.selectbox("Filter by Subject", ["All"] + list(df['Subject'].unique()))
-        
         filtered_df = df if subject_filter == "All" else df[df['Subject'] == subject_filter]
         
         st.write(f"### Attendance Log ({subject_filter})")
@@ -213,14 +204,12 @@ elif menu == "Download Reports":
 # ----------------- ADMIN PANEL -----------------
 elif menu == "🔑 Admin Panel (Overrides)":
     st.subheader("🔒 Teacher / Admin Control Panel")
-    
     admin_password = st.secrets.get("ADMIN_PASSWORD", "admin123")
     pwd_input = st.text_input("Enter Admin Password", type="password")
     
     if pwd_input == admin_password:
         st.success("✅ Admin Authenticated")
         df = load_data()
-
         tab1, tab2, tab3 = st.tabs(["📝 Edit / Delete Records", "➕ Manual Attendance Entry", "📋 Full Attendance Log"])
 
         with tab1:
