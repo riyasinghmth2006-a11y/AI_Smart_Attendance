@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import datetime
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import plotly.express as px
 from fpdf import FPDF
 
@@ -12,12 +15,38 @@ st.title("🎓 Advanced AI Smart Attendance System")
 
 CSV_FILE = "attendance.csv"
 
+# Function to Send Email Notification
+def send_email_alert(to_email, student_name, time_str):
+    sender_email = st.secrets.get("SENDER_EMAIL", "")
+    sender_password = st.secrets.get("SENDER_PASSWORD", "")
+
+    if not sender_email or not sender_password:
+        return False, "Email credentials missing in Streamlit Secrets."
+
+    try:
+        subject = "Attendance Confirmation Alert"
+        body = f"Hello,\n\nAttendance for {student_name} has been successfully marked today at {time_str}.\n\nRegards,\nAI Attendance System"
+        
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        return True, "Email sent successfully!"
+    except Exception as e:
+        return False, str(e)
+
 def load_data():
-    required_cols = ["Name", "Roll_No", "Date", "Time", "Status"]
+    required_cols = ["Name", "Roll_No", "Email", "Date", "Time", "Status"]
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
-            # Ensure all required columns exist
             for col in required_cols:
                 if col not in df.columns:
                     df[col] = "N/A"
@@ -37,7 +66,6 @@ def create_pdf(df):
     pdf.cell(200, 10, txt=f"Generated on: {datetime.date.today()}", ln=True, align='C')
     pdf.ln(10)
     
-    # Table Header
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(40, 10, "Name", border=1)
     pdf.cell(30, 10, "Roll", border=1)
@@ -45,7 +73,6 @@ def create_pdf(df):
     pdf.cell(40, 10, "Status", border=1)
     pdf.ln()
     
-    # Table Rows
     pdf.set_font("Arial", size=12)
     for _, row in df.iterrows():
         pdf.cell(40, 10, str(row['Name']), border=1)
@@ -59,16 +86,17 @@ menu = st.sidebar.selectbox("Navigation", ["Mark Attendance", "Analytics & Histo
 
 if menu == "Mark Attendance":
     st.subheader("📷 Live Camera Attendance")
-    col_a, col_b = st.columns(2)
-    student_name = col_a.text_input("Enter Student Name", value="Student_1")
-    roll_no = col_b.text_input("Enter Roll Number", value="101")
+    col_a, col_b, col_c = st.columns(3)
+    student_name = col_a.text_input("Student Name", value="Student_1")
+    roll_no = col_b.text_input("Roll Number", value="101")
+    user_email = col_c.text_input("Email ID (for alerts)", value="")
     
     img_file = st.camera_input("Take a photo")
     if img_file is not None:
         df = load_data()
         today = str(datetime.date.today())
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
         
-        # Check duplicate safely
         already_marked = df[(df['Roll_No'].astype(str) == str(roll_no)) & (df['Date'] == today)]
         
         if not already_marked.empty:
@@ -77,14 +105,23 @@ if menu == "Mark Attendance":
             new_entry = pd.DataFrame([{
                 "Name": student_name, 
                 "Roll_No": roll_no, 
+                "Email": user_email,
                 "Date": today, 
-                "Time": datetime.datetime.now().strftime("%H:%M:%S"), 
+                "Time": current_time, 
                 "Status": "Present"
             }])
             df_updated = pd.concat([df, new_entry], ignore_index=True)
             df_updated.to_csv(CSV_FILE, index=False)
             st.balloons()
             st.success(f"Marked attendance for **{student_name}** (Roll: {roll_no})!")
+
+            # Trigger Email Alert
+            if user_email:
+                status, msg = send_email_alert(user_email, student_name, current_time)
+                if status:
+                    st.info(f"📧 Confirmation email sent to **{user_email}**!")
+                else:
+                    st.caption(f"Note: Email notification not sent ({msg})")
 
 elif menu == "Analytics & History":
     st.subheader("📊 Analytics & Percentage")
@@ -113,4 +150,3 @@ elif menu == "Download Reports":
         
         csv_data = df.to_csv(index=False).encode('utf-8')
         st.download_button("📊 Download Report as CSV", data=csv_data, file_name="report.csv", mime="text/csv")
-        
