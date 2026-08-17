@@ -75,9 +75,9 @@ if menu == "Mark Attendance":
                     already_marked = df_curr[(df_curr['Name'] == student_name) & (df_curr['Date'] == today_date)]
                     if already_marked.empty:
                         new_entries.append({"Name": student_name, "Date": today_date, "Time": current_time, "Status": "Present"})
-                        st.info(f"Marked attendance for *{student_name}* at {current_time}")
+                        st.info(f"Marked attendance for **{student_name}** at {current_time}")
                     else:
-                        st.warning(f"Attendance for *{student_name}* is already marked today!")
+                        st.warning(f"Attendance for **{student_name}** is already marked today!")
 
                 if new_entries:
                     df_updated = pd.concat([df_curr, pd.DataFrame(new_entries)], ignore_index=False)
@@ -150,4 +150,3 @@ elif menu == "Download Reports":
             file_name=f"attendance_report_{selected_date}.csv",
             mime="text/csv",
         )
-           
