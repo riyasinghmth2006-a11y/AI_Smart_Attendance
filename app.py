@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fpdf import FPDF
 
-# --- Clean Light Theme Configuration ---
+# --- Configuration ---
 st.set_page_config(
     page_title="AI Smart Attendance System",
     page_icon="🤖",
@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Light Theme Styling
+# --- Light Theme Styling ---
 st.markdown("""
 <style>
     .stApp {
@@ -44,12 +44,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Title Header ---
+# --- Header ---
 st.title("🤖 AI Smart Attendance Portal")
 st.subheader("Automated Tracking & Admin Management")
 st.markdown("---")
 
-# --- Database Initialization ---
+# --- Helper Functions (With Error Proofing) ---
 def get_students():
     if not os.path.exists('students.csv'):
         df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
@@ -57,6 +57,10 @@ def get_students():
         return df
     try:
         df = pd.read_csv('students.csv')
+        df.columns = df.columns.str.strip().str.title().str.replace(' ', '_')
+        if 'Roll_Number' not in df.columns or 'Name' not in df.columns:
+            df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
+            df.to_csv('students.csv', index=False)
         return df
     except Exception:
         df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
@@ -70,6 +74,10 @@ def get_attendance():
         return df
     try:
         df = pd.read_csv('attendance_log.csv')
+        df.columns = df.columns.str.strip().str.title().str.replace(' ', '_')
+        if 'Roll_Number' not in df.columns:
+            df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Timestamp', 'Status'])
+            df.to_csv('attendance_log.csv', index=False)
         return df
     except Exception:
         df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Timestamp', 'Status'])
@@ -100,7 +108,7 @@ def send_email_alert(student_email, student_name, roll_no):
     except Exception:
         return False
 
-# --- ORIGINAL MAIN LAYOUT ---
+# --- MAIN LAYOUT ---
 col1, col2 = st.columns([1, 1])
 
 # LEFT COLUMN: Attendance System
@@ -108,7 +116,7 @@ with col1:
     st.header("📷 Face Scan / Attendance Portal")
     df_students = get_students()
     
-    if not df_students.empty and 'Roll_Number' in df_students.columns:
+    if not df_students.empty and 'Roll_Number' in df_students.columns and 'Name' in df_students.columns:
         student_options = [f"{row['Roll_Number']} - {row['Name']}" for _, row in df_students.iterrows()]
         selected_student = st.selectbox("Select Student to Mark Attendance", student_options)
         
@@ -119,7 +127,7 @@ with col1:
             s_name = selected_student.split(" - ")[1]
             
             email_val = df_students[df_students['Roll_Number'].astype(str) == str(roll_no)]['Email'].values
-            s_email = email_val[0] if len(email_val) > 0 else ""
+            s_email = email_val[0] if len(email_val) > 0 and pd.notna(email_val[0]) else ""
             
             if st.button("Submit Attendance", type="primary"):
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -156,7 +164,13 @@ with col2:
             if save_btn:
                 if new_roll and new_name and new_email:
                     df_s = get_students()
-                    if not df_s.empty and str(new_roll) in df_s['Roll_Number'].astype(str).values:
+                    
+                    # Safe Column Checking
+                    exists = False
+                    if not df_s.empty and 'Roll_Number' in df_s.columns:
+                        exists = str(new_roll) in df_s['Roll_Number'].astype(str).values
+                    
+                    if exists:
                         st.error("Roll number already exists!")
                     else:
                         new_row = pd.DataFrame([[new_roll, new_name, new_email]], columns=['Roll_Number', 'Name', 'Email'])
@@ -172,7 +186,7 @@ with col2:
     elif admin_pass != "":
         st.error("Incorrect Password")
 
-# --- BOTTOM SECTION: Logs & Analytics ---
+# --- BOTTOM SECTION: Logs History ---
 st.markdown("---")
 st.header("📊 Attendance Log History")
 df_attendance = get_attendance()
