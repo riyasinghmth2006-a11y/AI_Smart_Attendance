@@ -1,279 +1,245 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
-import datetime
+import numpy as np
+import plotly.express as px
+from PIL import Image
 import os
+from datetime import datetime
 import smtplib
-from PIL import Image, ImageStat
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import plotly.express as px
 from fpdf import FPDF
 
-# --- PAGE CONFIGURATION ---
+# --- Page Configuration (Light Theme & Wide Layout) ---
 st.set_page_config(
-    page_title="AI Smart Attendance",
-    page_icon="🎓",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="AI Smart Attendance System",
+    page_icon="🤖",
+    layout="wide"
 )
 
-# --- CUSTOM CSS FOR PREMIUM LOOK ---
+# --- Custom Light Theme CSS ---
 st.markdown("""
 <style>
+    /* Main Background & Text Color */
     .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        color: #f8fafc;
+        background-color: #F8FAFC;
+        color: #0F172A;
     }
-    .metric-card {
-        background: rgba(30, 41, 59, 0.7);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
+    
+    /* Header Container */
+    .main-header {
+        background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+        color: white;
         padding: 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(10px);
+        border-radius: 12px;
         text-align: center;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
     }
-    .metric-card h3 { color: #94a3b8; font-size: 1rem; margin-bottom: 8px; }
-    .metric-card h1 { color: #38bdf8; font-size: 2.2rem; margin: 0; }
-    .stButton>button {
-        background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
-        color: white; border: none; border-radius: 10px; font-weight: 600; padding: 0.6rem 1.2rem;
+    
+    /* Light Cards */
+    .light-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
     }
-    section[data-testid="stSidebar"] {
-        background-color: #0b1329; border-right: 1px solid rgba(255, 255, 255, 0.05);
+    
+    /* Streamlit Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 45px;
+        background-color: #E2E8F0;
+        border-radius: 8px;
+        color: #334155;
+        font-weight: 600;
+        padding: 0px 20px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #0284C7 !important;
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-ATTENDANCE_CSV = "attendance.csv"
-STUDENTS_CSV = "students.csv"
+# --- Header Section ---
+st.markdown("""
+<div class="main-header">
+    <h1 style='margin:0; font-size: 2.2rem;'>🤖 AI Smart Attendance Portal</h1>
+    <p style='margin:5px 0 0 0; opacity: 0.9;'>Automated Attendance Tracking & Real-Time Analytics</p>
+</div>
+""", unsafe_allow_html=True)
 
-# --- HELPER FUNCTIONS ---
-def load_students():
-    required_cols = ["Roll_No", "Name", "Email"]
-    if not os.path.exists(STUDENTS_CSV):
-        df = pd.DataFrame({"Roll_No": ["101"], "Name": ["Riya Singh"], "Email": ["rajivsingh7401@gmail.com"]})
-        df.to_csv(STUDENTS_CSV, index=False)
-        return df
+# --- CSV Data Initialization ---
+if not os.path.exists('students.csv'):
+    df_students = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
+    df_students.to_csv('students.csv', index=False)
+
+if not os.path.exists('attendance_log.csv'):
+    df_log = pd.DataFrame(columns=['Roll_Number', 'Name', 'Timestamp', 'Status'])
+    df_log.to_csv('attendance_log.csv', index=False)
+
+# --- Helper Functions ---
+def get_students():
+    return pd.read_csv('students.csv')
+
+def get_attendance():
+    return pd.read_csv('attendance_log.csv')
+
+def send_email_alert(student_email, student_name, roll_no):
     try:
-        df = pd.read_csv(STUDENTS_CSV)
-        # NaN / Empty string cleanup
-        df['Email'] = df['Email'].fillna("N/A").astype(str)
-        df['Roll_No'] = df['Roll_No'].astype(str)
-        df['Name'] = df['Name'].fillna("Unknown").astype(str)
-        return df
-    except Exception:
-        return pd.DataFrame(columns=required_cols)
-
-def save_students(df):
-    df.to_csv(STUDENTS_CSV, index=False)
-
-def load_attendance():
-    required_cols = ["Name", "Roll_No", "Email", "Subject", "Date", "Time", "Status"]
-    if os.path.exists(ATTENDANCE_CSV):
-        try:
-            df = pd.read_csv(ATTENDANCE_CSV)
-            for col in required_cols:
-                if col not in df.columns:
-                    df[col] = "N/A"
-            return df[required_cols]
-        except Exception:
-            return pd.DataFrame(columns=required_cols)
-    return pd.DataFrame(columns=required_cols)
-
-def save_attendance(df):
-    df.to_csv(ATTENDANCE_CSV, index=False)
-
-def verify_face_image(image_file):
-    try:
-        img = Image.open(image_file)
-        stat = ImageStat.Stat(img)
-        variance = sum(stat.var) / len(stat.var)
-        return variance > 100, "Success"
-    except Exception:
-        return False, "Invalid image"
-
-def send_email_alert(to_email, student_name, subject_name, time_str):
-    sender_email = st.secrets.get("SENDER_EMAIL", "").strip()
-    sender_password = st.secrets.get("SENDER_PASSWORD", "").strip().replace(" ", "")
-    
-    if not sender_email or not sender_password:
-        return False, "SENDER_EMAIL or SENDER_PASSWORD missing in Streamlit Secrets."
-    if not to_email or to_email in ["N/A", "nan", "None", ""]:
-        return False, "Student Email is not configured."
+        sender_email = st.secrets["SMTP_EMAIL"]
+        sender_password = st.secrets["SMTP_PASSWORD"]
         
-    try:
         msg = MIMEMultipart()
         msg['From'] = sender_email
-        msg['To'] = to_email
-        msg['Subject'] = f"Attendance Confirmation - {subject_name}"
-        msg.attach(MIMEText(f"Hello {student_name},\n\nYour attendance for {subject_name} has been successfully marked at {time_str}.\n\nRegards,\nAI Attendance System", 'plain'))
+        msg['To'] = student_email
+        msg['Subject'] = f"Attendance Confirmation - {student_name}"
         
-        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+        body = f"Hello {student_name} (Roll No: {roll_no}),\n\nYour attendance has been successfully recorded on {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}.\n\nThank you,\nAI Attendance System"
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        return True, "Email sent successfully!"
+        return True
     except Exception as e:
-        return False, str(e)
+        return False
 
-def create_pdf(df):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(190, 10, txt="Attendance Report", ln=True, align='C')
-    pdf.set_font("Arial", size=12)
-    pdf.cell(190, 10, txt=f"Generated on: {datetime.date.today()}", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(30, 10, "Name", border=1)
-    pdf.cell(20, 10, "Roll", border=1)
-    pdf.cell(35, 10, "Subject", border=1)
-    pdf.cell(30, 10, "Date", border=1)
-    pdf.cell(25, 10, "Time", border=1)
-    pdf.cell(25, 10, "Status", border=1)
-    pdf.ln()
-    pdf.set_font("Arial", size=10)
-    for _, row in df.iterrows():
-        pdf.cell(30, 10, str(row['Name'])[:12], border=1)
-        pdf.cell(20, 10, str(row['Roll_No']), border=1)
-        pdf.cell(35, 10, str(row['Subject'])[:15], border=1)
-        pdf.cell(30, 10, str(row['Date']), border=1)
-        pdf.cell(25, 10, str(row['Time']), border=1)
-        pdf.cell(25, 10, str(row['Status']), border=1)
-        pdf.ln()
-    return pdf.output(dest='S').encode('latin-1')
+# --- HOME SCREEN TABS (Admin Panel Included on Main Screen) ---
+tab1, tab2, tab3 = st.tabs(["📷 Take Attendance", "⚙️ Admin Panel (Home Screen)", "📊 Analytics & Reports"])
 
-# --- HEADER SECTION ---
-st.title("🎓 AI Smart Attendance Portal")
-st.caption("Automated Face-Verification & Real-time Analytics System")
-
-st_df = load_students()
-att_df = load_attendance()
-today_str = str(datetime.date.today())
-today_count = len(att_df[att_df['Date'] == today_str]) if not att_df.empty else 0
-
-m1, m2, m3 = st.columns(3)
-with m1:
-    st.markdown(f'<div class="metric-card"><h3>TOTAL REGISTERED</h3><h1>{len(st_df)}</h1></div>', unsafe_allow_html=True)
-with m2:
-    st.markdown(f'<div class="metric-card"><h3>PRESENT TODAY</h3><h1>{today_count}</h1></div>', unsafe_allow_html=True)
-with m3:
-    st.markdown(f'<div class="metric-card"><h3>TOTAL LOGS</h3><h1>{len(att_df)}</h1></div>', unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# --- NAVIGATION ---
-menu = st.sidebar.radio("📌 Navigation Menu", ["📸 Mark Attendance", "📊 Analytics & Insights", "📥 Download Reports", "🔑 Admin Panel"])
-
-if menu == "📸 Mark Attendance":
-    st.subheader("📷 Face Verification Scan")
-    students_df = load_students()
+# --- TAB 1: TAKE ATTENDANCE ---
+with tab1:
+    st.subheader("Face Scan & Attendance Portal")
+    col1, col2 = st.columns([1, 1])
     
-    if students_df.empty:
-        st.warning("No students registered! Please add students via Admin Panel.")
-    else:
-        c1, c2 = st.columns(2)
-        selected_roll = c1.selectbox("Select Roll Number", students_df['Roll_No'].unique())
-        matched_student = students_df[students_df['Roll_No'] == str(selected_roll)]
-        
-        if not matched_student.empty:
-            student_info = matched_student.iloc[0]
-            student_name = str(student_info.get("Name", "Unknown"))
-            student_email = str(student_info.get("Email", "N/A"))
+    df_st = get_students()
+    
+    with col1:
+        st.write("### Student Verification")
+        if not df_st.empty:
+            student_list = [f"{row['Roll_Number']} - {row['Name']}" for _, row in df_st.iterrows()]
+            selected_student = st.selectbox("Select Registered Student", student_list)
             
-            c2.selectbox("Select Subject", ["Python Programming", "AI & Machine Learning", "Data Science", "Web Development"], key="subj")
-            selected_subject = st.session_state.subj
+            camera_image = st.camera_input("Capture Face Photo")
             
-            st.info(f"👤 *Student Name:* {student_name} | 📧 *Email:* {student_email}")
-            
-            img_file = st.camera_input("Scan Face via Camera")
-            if img_file is not None:
-                with st.spinner("🔍 Validating Face Clarity..."):
-                    is_valid, _ = verify_face_image(img_file)
+            if camera_image:
+                roll_no = selected_student.split(" - ")[0]
+                s_name = selected_student.split(" - ")[1]
+                s_email = df_st[df_st['Roll_Number'].astype(str) == str(roll_no)]['Email'].values[0]
                 
-                if not is_valid:
-                    st.error("❌ Scan Failed: Please face the camera properly with good lighting.")
-                else:
-                    df = load_attendance()
-                    current_time = datetime.datetime.now().strftime("%H:%M:%S")
-                    already_marked = df[(df['Roll_No'].astype(str) == str(selected_roll)) & 
-                                        (df['Date'] == today_str) & 
-                                        (df['Subject'] == selected_subject)]
+                if st.button("Mark Attendance", type="primary"):
+                    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    new_log = pd.DataFrame([[roll_no, s_name, now, "Present"]], columns=['Roll_Number', 'Name', 'Timestamp', 'Status'])
                     
-                    if not already_marked.empty:
-                        st.warning(f"⚠️ *{student_name}* is already marked Present for *{selected_subject}* today!")
+                    df_log = get_attendance()
+                    df_log = pd.concat([df_log, new_log], ignore_index=True)
+                    df_log.to_csv('attendance_log.csv', index=False)
+                    
+                    st.success(f"✅ Attendance Marked for {s_name} ({roll_no})!")
+                    
+                    # Send Email Alert
+                    if send_email_alert(s_email, s_name, roll_no):
+                        st.info(f"📧 Confirmation Email sent to {s_email}")
                     else:
-                        new_entry = pd.DataFrame([{
-                            "Name": student_name, "Roll_No": selected_roll, "Email": student_email,
-                            "Subject": selected_subject, "Date": today_str, "Time": current_time, "Status": "Present"
-                        }])
-                        save_attendance(pd.concat([df, new_entry], ignore_index=True))
-                        st.balloons()
-                        st.success(f"✅ Marked Present: *{student_name}* ({selected_subject})")
-                        
-                        # Trigger Email Alert
-                        with st.spinner("📧 Sending email notification..."):
-                            status, msg = send_email_alert(student_email, student_name, selected_subject, current_time)
-                        
-                        if status:
-                            st.success(f"📩 Confirmation email sent to *{student_email}*!")
-                        else:
-                            st.warning(f"⚠️ Email Not Sent: {msg}")
+                        st.warning("⚠️ Attendance marked, but Email Alert failed (check Streamlit Secrets).")
+        else:
+            st.warning("⚠️ No students registered yet! Please add students using the Admin Panel tab on top.")
 
-elif menu == "📊 Analytics & Insights":
-    st.subheader("📊 Class Attendance Dashboard")
-    df = load_attendance()
-    if df.empty:
-        st.info("No attendance data logged yet.")
-    else:
-        filter_subj = st.selectbox("Filter Subject", ["All"] + list(df['Subject'].unique()))
-        filtered_df = df if filter_subj == "All" else df[df['Subject'] == filter_subj]
-        st.dataframe(filtered_df, use_container_width=True)
-        fig = px.bar(filtered_df, x="Subject", color="Status", title="Subject-wise Breakdown", template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        st.write("### Today's Quick Summary")
+        df_log = get_attendance()
+        st.metric("Total Attendance Logged Today", len(df_log))
+        st.dataframe(df_log.tail(5), use_container_width=True)
 
-elif menu == "📥 Download Reports":
-    st.subheader("📥 Export Attendance Files")
-    df = load_attendance()
-    if df.empty:
-        st.warning("No records to export.")
-    else:
-        col1, col2 = st.columns(2)
-        pdf_bytes = create_pdf(df)
-        col1.download_button("📄 Download PDF Report", data=pdf_bytes, file_name="attendance_report.pdf", mime="application/pdf")
-        csv_data = df.to_csv(index=False).encode('utf-8')
-        col2.download_button("📊 Download CSV File", data=csv_data, file_name="attendance_report.csv", mime="text/csv")
-
-elif menu == "🔑 Admin Panel":
-    st.subheader("🔑 Admin Settings")
-    pwd_input = st.text_input("Enter Admin Password", type="password")
-    if pwd_input == st.secrets.get("ADMIN_PASSWORD", "admin123"):
-        st.success("✅ Authenticated")
-        tab1, tab2 = st.tabs(["➕ Manage Student Directory", "📋 View Attendance Logs"])
+# --- TAB 2: ADMIN PANEL ON HOME SCREEN ---
+with tab2:
+    st.subheader("🔑 Admin Control Dashboard")
+    st.info("Manage student registrations and database directly from the main home interface.")
+    
+    admin_pass = st.text_input("Enter Admin Password to Unlock Controls", type="password")
+    
+    if admin_pass == st.secrets.get("ADMIN_PASSWORD", "admin123"):
+        st.success("🔓 Admin Controls Active")
         
-        with tab1:
-            st.write("### Add / Update Student")
-            with st.form("add_student", clear_on_submit=True):
-                r = st.text_input("Roll Number")
-                n = st.text_input("Student Name")
-                e = st.text_input("Email Address")
-                if st.form_submit_button("Save Student"):
-                    if r and n and e:
-                        st_df = load_students()
-                        # Overwrite if roll number already exists
-                        st_df = st_df[st_df['Roll_No'] != str(r)]
-                        new_row = pd.DataFrame([{"Roll_No": str(r), "Name": str(n), "Email": str(e)}])
-                        save_students(pd.concat([st_df, new_row], ignore_index=True))
-                        st.success(f"Saved: {n} (Roll No: {r}, Email: {e})")
-                        st.rerun()
+        col_a, col_b = st.columns([1, 1])
+        
+        with col_a:
+            st.write("#### Register New Student")
+            with st.form("add_student_form"):
+                new_roll = st.text_input("Roll Number")
+                new_name = st.text_input("Student Name")
+                new_email = st.text_input("Email Address")
+                submit_btn = st.form_submit_button("Save Student to Database")
+                
+                if submit_btn:
+                    if new_roll and new_name and new_email:
+                        df_s = get_students()
+                        if str(new_roll) in df_s['Roll_Number'].astype(str).values:
+                            st.error("Roll Number already exists!")
+                        else:
+                            new_entry = pd.DataFrame([[new_roll, new_name, new_email]], columns=['Roll_Number', 'Name', 'Email'])
+                            df_s = pd.concat([df_s, new_entry], ignore_index=True)
+                            df_s.to_csv('students.csv', index=False)
+                            st.success(f"Added {new_name} successfully!")
+                            st.rerun()
                     else:
-                        st.error("Please enter Roll No, Name, AND Email Address!")
+                        st.error("Please fill all fields!")
+                        
+        with col_b:
+            st.write("#### Registered Student Directory")
+            df_curr_students = get_students()
+            st.dataframe(df_curr_students, use_container_width=True)
+            st.caption(f"Total Registered Students: {len(df_curr_students)}")
+    elif admin_pass != "":
+        st.error("❌ Incorrect Admin Password")
+
+# --- TAB 3: ANALYTICS & REPORTS ---
+with tab3:
+    st.subheader("📊 Analytics & Data Export")
+    df_log = get_attendance()
+    
+    if not df_log.empty:
+        col_x, col_y = st.columns([2, 1])
+        with col_x:
+            st.write("#### Attendance Trends")
+            df_log['Date'] = pd.to_datetime(df_log['Timestamp']).dt.date
+            daily_counts = df_log.groupby('Date').size().reset_index(name='Count')
+            fig = px.bar(daily_counts, x='Date', y='Count', title="Daily Attendance Count", color_discrete_sequence=['#0284C7'])
+            st.plotly_chart(fig, use_container_width=True)
             
-            st.write("### Registered Students")
-            st.dataframe(load_students(), use_container_width=True)
+        with col_y:
+            st.write("#### Export Data")
+            st.dataframe(df_log, use_container_width=True)
             
-        with tab2:
-            st.dataframe(load_attendance(), use_container_width=True)
+            # PDF Generation
+            if st.button("Generate & Download PDF Summary"):
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 16)
+                pdf.cell(200, 10, txt="AI Smart Attendance Report", ln=True, align='C')
+                pdf.set_font("Arial", size=12)
+                pdf.cell(200, 10, txt=f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='C')
+                pdf.ln(10)
+                
+                for _, row in df_log.iterrows():
+                    pdf.cell(200, 8, txt=f"Roll: {row['Roll_Number']} | Name: {row['Name']} | Time: {row['Timestamp']}", ln=True)
+                    
+                pdf.output("attendance_report.pdf")
+                with open("attendance_report.pdf", "rb") as file:
+                    st.download_button(
+                        label="📥 Download PDF Report",
+                        data=file,
+                        file_name="attendance_report.pdf",
+                        mime="application/pdf"
+                    )
+    else:
+        st.info("No attendance data available yet to display analytics.")
+        
