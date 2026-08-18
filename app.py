@@ -107,10 +107,14 @@ def send_email_alert(student_email, student_name, roll_no, subject_name):
     except Exception:
         return False
 
+# Session State for preventing duplicate submissions on single click
+if "last_processed_photo" not in st.session_state:
+    st.session_state["last_processed_photo"] = None
+
 # --- MAIN LAYOUT (2 COLUMNS) ---
 col1, col2 = st.columns([1, 1])
 
-# LEFT COLUMN: Attendance Marking
+# LEFT COLUMN: Auto-Submit Attendance Marking
 with col1:
     st.header("📷 Face Scan / Attendance Portal")
     df_students = get_students()
@@ -124,14 +128,17 @@ with col1:
         
         cam_photo = st.camera_input("Take Photo")
         
-        if cam_photo:
-            roll_no = selected_student.split(" - ")[0]
-            s_name = selected_student.split(" - ")[1]
+        # Automatic Trigger when Photo is Captured
+        if cam_photo is not None:
+            photo_id = f"{cam_photo.name}_{cam_photo.size}_{selected_student}_{subject}"
             
-            email_val = df_students[df_students['Roll_Number'].astype(str) == str(roll_no)]['Email'].values
-            s_email = email_val[0] if len(email_val) > 0 and pd.notna(email_val[0]) else ""
-            
-            if st.button("Submit Attendance", type="primary"):
+            if st.session_state["last_processed_photo"] != photo_id:
+                roll_no = selected_student.split(" - ")[0]
+                s_name = selected_student.split(" - ")[1]
+                
+                email_val = df_students[df_students['Roll_Number'].astype(str) == str(roll_no)]['Email'].values
+                s_email = email_val[0] if len(email_val) > 0 and pd.notna(email_val[0]) else ""
+                
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 new_log = pd.DataFrame([[roll_no, s_name, subject, now, "Present"]], columns=['Roll_Number', 'Name', 'Subject', 'Timestamp', 'Status'])
                 
@@ -139,13 +146,15 @@ with col1:
                 df_log = pd.concat([df_log, new_log], ignore_index=True)
                 df_log.to_csv('attendance_log.csv', index=False)
                 
-                st.success(f"✅ Attendance Marked for {s_name} ({subject})")
+                st.session_state["last_processed_photo"] = photo_id
+                
+                st.success(f"✅ Auto-Logged: Attendance Marked for {s_name} ({subject})")
                 
                 if s_email:
                     if send_email_alert(s_email, s_name, roll_no, subject):
                         st.info(f"📧 Confirmation email sent to {s_email}")
-                    else:
-                        st.caption("ℹ️ Email secrets (SMTP) not configured in Streamlit Cloud.")
+            else:
+                st.success(f"✅ Attendance already recorded!")
     else:
         st.warning("No students registered yet! Add students using the Admin Panel on the right.")
 
@@ -185,7 +194,7 @@ with col2:
     elif admin_pass != "":
         st.error("Incorrect Password")
 
-# --- BOTTOM SECTION: Analytics, Percentage & PDF Download ---
+# --- BOTTOM SECTION: Analytics & Reports ---
 st.markdown("---")
 st.header("📊 Attendance Analytics & Percentage Reports")
 
@@ -200,7 +209,6 @@ if not df_att.empty:
     m1.metric("Total Attendance Recorded", total_logs)
     m2.metric("Total Registered Students", total_students)
     
-    # Calculate Overall Percentage
     if total_students > 0:
         unique_present = df_att['Roll_Number'].nunique()
         pct = (unique_present / total_students) * 100
@@ -243,4 +251,4 @@ if not df_att.empty:
                 )
 else:
     st.info("No attendance logged yet.")
-                
+        
