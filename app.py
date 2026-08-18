@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from PIL import Image
 import os
 from datetime import datetime
 import smtplib
@@ -10,20 +9,23 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fpdf import FPDF
 
-# --- Page Configuration (Light Theme) ---
+# --- Page Configuration ---
 st.set_page_config(
     page_title="AI Smart Attendance System",
     page_icon="🤖",
     layout="wide"
 )
 
-# --- Custom Light Theme CSS ---
+# --- Clean Light Theme CSS ---
 st.markdown("""
 <style>
+    /* Full Page Background */
     .stApp {
-        background-color: #F8FAFC;
+        background-color: #FFFFFF;
         color: #0F172A;
     }
+    
+    /* Header Container */
     .main-header {
         background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
         color: white;
@@ -33,20 +35,31 @@ st.markdown("""
         margin-bottom: 25px;
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
     }
+    
+    /* Responsive & Mobile Friendly Tabs */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
+        gap: 8px;
+        flex-wrap: wrap;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        background-color: #E2E8F0;
+        height: 42px;
+        background-color: #F1F5F9;
         border-radius: 8px;
         color: #334155;
         font-weight: 600;
-        padding: 0px 20px;
+        padding: 0px 14px;
+        font-size: 14px;
     }
     .stTabs [aria-selected="true"] {
         background-color: #0284C7 !important;
         color: white !important;
+    }
+
+    /* Force Light Styling on Dataframes */
+    [data-testid="stDataFrame"] {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -59,7 +72,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- Robust CSV Helper Functions ---
+# --- CSV Helper Functions ---
 def get_students():
     if not os.path.exists('students.csv'):
         df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
@@ -67,7 +80,6 @@ def get_students():
         return df
     try:
         df = pd.read_csv('students.csv')
-        # Standardize column names
         df.columns = df.columns.str.strip().str.title().str.replace(' ', '_')
         if 'Roll_Number' not in df.columns or 'Name' not in df.columns:
             df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Email'])
@@ -85,7 +97,7 @@ def get_attendance():
         return df
     try:
         df = pd.read_csv('attendance_log.csv')
-        df.columns = df.columns.str.strip().str.title().str.replace(' ', '_')
+        df.columns = df.columns.str.strip().str.replace(' ', '_')
         if 'Roll_Number' not in df.columns:
             df = pd.DataFrame(columns=['Roll_Number', 'Name', 'Timestamp', 'Status'])
             df.to_csv('attendance_log.csv', index=False)
@@ -120,7 +132,7 @@ def send_email_alert(student_email, student_name, roll_no):
         return False
 
 # --- HOME SCREEN TABS ---
-tab1, tab2, tab3 = st.tabs(["📷 Take Attendance", "⚙️ Admin Panel (Home Screen)", "📊 Analytics & Reports"])
+tab1, tab2, tab3 = st.tabs(["📷 Attendance", "⚙️ Admin Panel", "📊 Analytics"])
 
 # --- TAB 1: TAKE ATTENDANCE ---
 with tab1:
@@ -157,7 +169,7 @@ with tab1:
                     if s_email and send_email_alert(s_email, s_name, roll_no):
                         st.info(f"📧 Email notification sent to {s_email}")
         else:
-            st.info("ℹ️ No registered students found. Please add students in the **Admin Panel** tab above.")
+            st.info("ℹ️ No registered students found. Please add students in the **⚙️ Admin Panel** tab above.")
 
     with col2:
         st.write("### Today's Quick Summary")
@@ -168,7 +180,7 @@ with tab1:
 # --- TAB 2: ADMIN PANEL ---
 with tab2:
     st.subheader("🔑 Admin Control Dashboard")
-    st.info("Manage student registrations directly from the home interface.")
+    st.info("Manage student registrations directly from the main interface.")
     
     admin_pass = st.text_input("Enter Admin Password", type="password")
     
